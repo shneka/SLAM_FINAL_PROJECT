@@ -1,0 +1,145 @@
+% when three landmarks are given
+clear all;
+close all;
+clc;
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Configuration settings
+N_L = 30;
+r_actual = 20;
+
+dt = 1; % sampling time
+
+% Trajectory
+
+v_true = 0.2 + .01*randn(1,N_L-1); % true velocity. Changing this profile allows changing the trajectory
+w_true = .01*ones(1,N_L-1); % true rotational velocity
+
+% Initial conditions
+x_true_1 = [0 0 0]'; % initial starting pose (x y phi)
+x_hat_1  = [0 0 0]'; % initial estimate
+P_1 = zeros(3); % initial covariance
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Real World Simulation
+
+% To generate random points in a circle
+x1 = 0;
+y1 = 0;
+rc = 20;
+LM = zeros(N_L,2);
+ for i=1:N_L
+    a=2*pi*rand;
+    r=sqrt(rand);
+    LM(i,1)=(rc*r)*cos(a)+x1;
+    LM(i,2)=(rc*r)*sin(a)+y1;
+ end
+d_max = r_actual*0.3;
+[v_m, w_m,z,x_true] = rws(v_true,w_true,LM,d_max,dt);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % Bookkeeping
+P_plus = zeros(3,3);
+x_hat_plus = zeros(3,1);
+x_plot = zeros(3,N_L);
+P_plot = zeros(3,3,N_L);
+res = zeros(2,N_L);
+S = zeros(2,2,N_L);
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % EKF
+% % notice that we let the filter start with a propagation step.
+M = 1;
+for i = 2:N_L
+      % Propagation
+      [x_hat_min, P_min] = EKF_propagate(P_plus, v_m(1,i-1)^2*diag([0.01^2 0.04^2]),x_hat_plus, v_m(1,i-1), w_m(1,i-1), dt,M);
+      if(z(1,i)>0)
+      % Update 
+         [x_hat_plus,P_plus,res(:,i),S(:,:,i)] = EKF_update_dist_bear(x_hat_min,P_min,z(1,i),z(2,i));
+      else
+          x_hat_plus = x_hat_min;
+          P_plus = P_min;
+          res(:,i) = [-100;-100];
+          S(:,:,i) = [-100 -100;-100 -100];
+      end
+      x_plot(:,i) = x_hat_plus(1:3,1); 
+      P_plot(:,:,i) =  P_plus(1:3,1:3,1);
+end
+size(x_hat_plus)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % Visualization
+% 
+% % labels
+state = {'x (m)','y (m)','\phi (rad)'};
+stateerr = {'x-x_{hat} (m)','y-y_{hat} (m)','\phi-\phi_{hat} (rad)'};
+
+
+% generate time 
+t = 0:dt:(N_L-1)*dt;
+S_v = []; for i = 1:N_L, S_v = [S_v S(1,1,i)]; end;
+
+
+% % True state vs. posterior estimate
+figure('Name','2D Trajectory'); hold on
+plot(x_true(1,:), x_true(2,:), 'b');
+plot(x_plot(1,:),x_plot(2,:), 'r');
+xlabel('x (m)')
+ylabel('y (m)')
+legend('True State','Estimate')
+% 
+figure('Name','Trajectory'); hold on
+
+for i = 1:3
+    subplot(3,1,i); plot(t, x_true(i,:), 'b'); hold on;
+    subplot(3,1,i); plot(t, x_plot(i,:), 'r'); hold on;
+    ylabel(state{i})
+end
+xlabel('t (s)')
+subplot(3,1,1); legend('True State','Posterior Estimate')
+
+% % Error
+for i = 1:3
+    figure('Name','Pose Error'); hold on
+    plot(t, x_true(i,:)-x_plot(i,:)); hold on;  
+    plot(t, 3*sqrt(squeeze(P_plot(i,i,:))),'r'); hold on;
+    plot(t,-3*sqrt(squeeze(P_plot(i,i,:))),'r'); hold on;
+    
+    xlabel('time (s)')
+    ylabel(stateerr{i})
+    legend('State Error','3\sigma - bound')
+end
+
+
+figure('Name','Error_Plot')
+for j=1:5:N_L
+    %plot_error_ellipse(P_plus(:,:,j),x_hat_plus(:,j));
+    plot_error_ellipse(P_plot(:,:,j),x_plot(:,j));
+    hold on;
+end
+%  
+% figure('Name','Residual'); hold on
+% plot(t, res)
+% plot(t, 3*sqrt(S_v),'r')
+% plot(t,-3*sqrt(S_v),'r')
+% xlabel('time (s)');
+% ylabel('z - z_{hat} (m)')
+% legend('GPS Residual','3\sigma - bound')
+%Residual (only for future reference)
+figure('Name','Residual'); hold on
+% considering the two residues
+res_1 = res(1,:);
+res_2 = res(2,:);
+S_1 = S(1,1,:);
+s_2 = S(2,2,:);
+% 
+% % Plotting for first residue
+% subplot(2,1,1);plot(t(res_1~=-100), res_1(res_1~=-100));
+% subplot(2,1,1);plot(t(S_v~=-100), 3*sqrt(squeeze(S_v(S_v~=-100))),'r'); hold on;
+% subplot(2,1,1);plot(t(S_v~=-100),-3*sqrt(squeeze(S_v(S_v~=-100))),'r'); hold on;
+% 
+% subplot(2,1,2);plot(t(res_2~=-100), res_2(res_2~=-100));
+% % ylabel(['z_' intstr(i) ' - z_{' int2str(i) '_{hat}} (m)'])
+% 
+% xlabel('time (s)');
+% legend('Measurement Residual','3\sigma - bound')
+
