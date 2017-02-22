@@ -1,4 +1,3 @@
-# SLAM_FINAL_PROJECT
-SLAM
-This is robotics final homework matlab file
-SLAM
+# SLAM_Project_simulation 
+
+Simulation of a robot running in a circle using matlab. Planning before implementation of SLAM.
